@@ -1,0 +1,22 @@
+extern fn printf(string, ...);
+
+fn main() -> int {
+    int position = 0;
+    int pos = 1;
+    int floor = 0;
+
+    //need to create something like this
+    for char letter in readUntilEof(STDIN) {
+        case letter {
+            ')' -> { floor -= 1; },
+            '(' -> { floor += 1; },
+        }
+        if floor < 0 && position == 0 {
+            position = pos;
+        }
+        pos += 1;
+    }
+    printf("part 1: %d\npart 2: %d\n", floor, position);
+    return 0;
+}
+

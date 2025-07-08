@@ -1,0 +1,19 @@
+//aaaaa
+/* a */
+/* 1
+2
+3
+*/
+extern fn printf(string, ...);
+//extern fn puts(string);
+
+fn print() -> void {
+    printf("hello");
+    printf(" ");
+    printf("world\n");
+}
+
+fn main() -> void {
+    print();
+    //return 0;
+}
