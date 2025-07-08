@@ -87,7 +87,15 @@ impl Syntax {
                 }
                 Statement::ExternFunctionCall(call) => {
                     self.asm_pass_parameters(call.parameters.clone());
-                    println!("  xor %eax, %eax");
+                    self.externs.get(&call.name).map(|f| {
+                        if f.parameters.contains(&VarType::VarArgs) {
+                            // AL contains the number of vector registers (XMM0-XMM7) used for floating-point arguments
+                            // First 8 float args in XMM0-XMM7
+                            // Push additional float args to stack in reverse order
+                            // For now we do not have floating point support, so we set it to 0
+                            println!("  xorl %eax, %eax");
+                        }
+                    });
                     println!("  call {}", call.name);
                 }
                 Statement::Return(ret) => {
@@ -404,7 +412,7 @@ pub struct Parameter {
     is_literal: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VarType {
     Int,
     Char,
