@@ -1,0 +1,136 @@
+// ===== Whitespace and Comments =====
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ line_comment | block_comment }
+line_comment = _{ "//" ~ (!"\n" ~ ANY)* }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// ===== Program Structure =====
+program = { SOI ~ (declaration | extern_function | function)* ~ EOI }
+
+// ===== Extern Functions =====
+extern_function = { EXTERN ~ extern_function_declaration ~ SEMICOLON }
+extern_function_declaration = _{ FN ~ identifier ~ L_PAREN ~ extern_parameter_list? ~ R_PAREN ~ return_type? }
+extern_parameter_list = { var_type ~ (COMMA ~ var_type)* }
+
+// ===== Functions =====
+function = { function_declaration ~ block }
+function_declaration = _{ FN ~ identifier ~ L_PAREN ~ parameter_list? ~ R_PAREN ~ return_type? }
+return_type = { ARROW ~ var_type }
+parameter_list = { parameter ~ (COMMA ~ parameter)* }
+parameter = { var_type ~ identifier }
+function_call = { identifier ~ L_PAREN ~ argument_list? ~ R_PAREN }
+argument_list = { argument ~ (COMMA ~ argument)* }
+argument = { boolean_expression }
+
+// ===== Types =====
+var_type = _{ BUILTIN } //| identifier }
+
+// ===== Statements =====
+block = { L_BRACE ~ statement* ~ R_BRACE }
+statement = { 
+    function_call ~ SEMICOLON | 
+    declaration | 
+    for_loop | 
+    case_statement | 
+    block | 
+    if_statement | 
+    assignment | 
+    return_statement 
+}
+declaration = { var_type ~ identifier ~ (ASSIGN ~ expression)? ~ SEMICOLON }
+assignment = { identifier ~ assignment_operator ~ expression ~ SEMICOLON }
+return_statement = { RETURN ~ expression ~ SEMICOLON }
+
+// ===== Control Flow =====
+for_loop = { FOR ~ identifier ~ identifier ~ IN ~ function_call ~ block }
+case_statement = { CASE ~ identifier ~ L_BRACE ~ case_item ~ (COMMA ~ case_item)* ~ COMMA? ~ R_BRACE }
+case_item = { value ~ ARROW ~ (statement | block) }
+if_statement = { IF ~ boolean_expression ~ block ~ (ELSE ~ block)? }
+
+// ===== Expressions =====
+expression = _{ value ~ (binary_operator ~ value)? }
+value = _{ literal | identifier }
+literal = { string | integer | char }
+boolean_expression = _{ boolean_value ~ (boolean_operator ~ boolean_value)* }
+boolean_value = _{ TRUE | FALSE | logical_expression }
+logical_expression = _{ expression ~ (comparison_operator ~ expression)? }
+
+// ===== Operators =====
+binary_operator = { PLUS | MINUS | MULTI | DIV | MOD }
+assignment_operator = { ASSIGN | ASSIGN_PLUS | ASSIGN_MINUS | ASSIGN_MULTI | ASSIGN_DIV | ASSIGN_MOD | ASSIGN_AND | ASSIGN_OR }
+boolean_operator = { AND | OR }
+comparison_operator = { EQ | NEQ | GT | LT | GTE | LTE }
+
+// ===== Boolean Operators =====
+AND = { DOUBLE_AND | SINGLE_AND }
+OR = { DOUBLE_OR | SINGLE_OR }
+DOUBLE_AND = { "&&" }
+SINGLE_AND = { "&" }
+DOUBLE_OR = { "||" }
+SINGLE_OR = { "|" }
+
+// ===== Comparison Operators =====
+EQ = { "==" }
+NEQ = { "!=" }
+GT = { ">" }
+LT = { "<" }
+GTE = { ">=" }
+LTE = { "<=" }
+
+// ===== Assignment Operators =====
+ASSIGN = { "=" }
+ASSIGN_PLUS = { "+=" }
+ASSIGN_MINUS = { "-=" }
+ASSIGN_MULTI = { "*=" }
+ASSIGN_DIV = { "/=" }
+ASSIGN_MOD = { "%=" }
+ASSIGN_AND = { "&=" }
+ASSIGN_OR = { "|=" }
+
+// ===== Arithmetic Operators =====
+PLUS = { "+" }
+MINUS = { "-" }
+MULTI = { "*" }
+DIV = { "/" }
+MOD = { "%" }
+//NOT = { "!" }
+//INCREMENT = { "++" }
+//DECREMENT = { "--" }
+
+// ===== Delimiters =====
+L_PAREN = _{ "(" }
+R_PAREN = _{ ")" }
+L_BRACE = _{ "{" }
+R_BRACE = _{ "}" }
+SEMICOLON = _{ ";" }
+COLON = _{ ":" }
+COMMA = _{ "," }
+ARROW = _{ "->" }
+
+// ===== Keywords =====
+IF = _{ "if" }
+ELSE = _{ "else" }
+CASE = _{ "case" }
+FOR = _{ "for" }
+IN = _{ "in" }
+RETURN = _{ "return" }
+EXTERN = _{ "extern" }
+FN = _{ "fn" }
+TRUE = { "true" }
+FALSE = { "false" }
+NULL = { "null" }
+
+// ===== Builtin Types =====
+BUILTIN = _{ STRING | INT | BOOL | CHAR | VOID | VARGS }
+STRING = @{ "string" }
+INT = @{ "int" }
+BOOL = @{ "bool" }
+CHAR = @{ "char" }
+VOID = @{ "void" }
+VARGS = @{ "..." }
+
+// ===== Primitives =====
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+char = @{ "\'" ~ (ANY | "\\" ~ ANY) ~ "\'" }
+integer = @{ ASCII_DIGIT+ }
