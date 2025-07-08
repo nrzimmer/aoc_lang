@@ -1,18 +1,20 @@
+#![allow(dead_code)]
 use crate::lexer::Rule;
 use pest::iterators::{Pair, Pairs};
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct Syntax {
-    externs: HashMap<String, ExternFunction>,
-    functions: HashMap<String, Function>,
+pub struct Syntax<'a> {
+    content: Pair<'a, Rule>,
+    pub(crate) externs: HashMap<String, ExternFunction>,
+    pub(crate) functions: HashMap<String, Function>,
     variables: VarTree,
-    strings: Vec<String>,
+    pub(crate) strings: Vec<String>,
     next_vartree: usize,
 }
 
-impl Syntax {
-    pub fn new() -> Self {
+impl<'a> Syntax<'a> {
+    pub fn new(content: Pair<'a, Rule>) -> Self {
         let externs = HashMap::new();
         let functions = HashMap::new();
         let strings = Vec::new();
@@ -22,6 +24,7 @@ impl Syntax {
             children: HashMap::new(),
         };
         Self {
+            content,
             externs,
             functions,
             variables,
@@ -36,172 +39,30 @@ impl Syntax {
         id
     }
 
-    pub fn analize(&mut self, parsed: Pairs<Rule>) {
+    pub fn analyze(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let parsed = self.content.clone().into_inner();
         for pair in parsed {
-            self.parse(pair);
+            self.parse(pair)?;
         }
+        Ok(())
     }
 
-    pub fn assemble(&mut self, parsed: Pairs<Rule>) {
-        if !self.functions.contains_key("main") {
-            panic!("No main function");
-        }
-
-        println!(".text");
-        println!(".section	.rodata");
-        println!(".align 8");
-        for id in 0..self.strings.len() {
-            let str = &self.strings[id];
-            println!(".STR{}:", id);
-            println!("  .string {}", str);
-        }
-        println!();
-
-        let mut main = self.functions.remove("main").unwrap();
-        println!(".text\n.globl main");
-        self.asm_function(&mut main);
-
-        // Collect all function names first to avoid the borrow checker error
-        let function_names: Vec<String> = self.functions.keys().cloned().collect();
-        println!();
-
-        // Process each function by name
-        for name in function_names {
-            let f = self.functions.get(&name).unwrap().clone();
-            self.asm_function(&f);
-            println!();
-        }
-    }
-
-    fn asm_function(&mut self, function: &Function) {
-        println!("{}:", function.name);
-        let mut add_return = true;
-        for stmt in &function.code.statements {
-            match stmt {
-                Statement::Block(blk) => {
-                    todo!()
-                }
-                Statement::FunctionCall(call) => {
-                    self.asm_pass_parameters(call.parameters.clone());
-                    println!("  call {}", call.name);
-                }
-                Statement::ExternFunctionCall(call) => {
-                    self.asm_pass_parameters(call.parameters.clone());
-                    self.externs.get(&call.name).map(|f| {
-                        if f.parameters.contains(&VarType::VarArgs) {
-                            // AL contains the number of vector registers (XMM0-XMM7) used for floating-point arguments
-                            // First 8 float args in XMM0-XMM7
-                            // Push additional float args to stack in reverse order
-                            // For now we do not have floating point support, so we set it to 0
-                            println!("  xorl %eax, %eax");
-                        }
-                    });
-                    println!("  call {}", call.name);
-                }
-                Statement::Return(ret) => {
-                    add_return = false;
-                    todo!()
-                }
-            }
-        }
-        if add_return {
-            println!("  xor  %eax, %eax\n  ret")
-        }
-    }
-
-    fn asm_pass_parameters(&self, params: Vec<Parameter>) {
-        for idx in (0..params.len()).rev() {
-            let param = &params[idx];
-            if idx > 5 {
-                self.asm_push_parameter(param);
-            }
-            match idx {
-                5 => {
-                    println!("  movl $4, %r9d")
-                }
-                4 => {
-                    println!("  movl $3, %r8d")
-                }
-                3 => {
-                    println!("  movl $2, %ecx")
-                }
-                2 => {
-                    println!("  movl $1, %edx")
-                }
-                1 => {
-                    self.asm_pass_param(param, "%esi");
-                }
-                0 => {
-                    self.asm_pass_param(param, "%rdi");
-                }
-                _ => {
-                    panic!("Should not happen!!! parameter index: {}", idx)
-                }
-            }
-        }
-    }
-
-    fn asm_pass_param(&self, param: &Parameter, dest: &str) {
-        match param.var_type {
-            VarType::Int => {
-                todo!()
-            }
-            VarType::Char => {
-                todo!()
-            }
-            VarType::String => {
-                println!("  leaq .STR{}(%rip), {}", param.id.unwrap(), dest);
-            }
-            VarType::Bool => {
-                todo!()
-            }
-            VarType::Void => {
-                panic!("Cannot pass void type")
-            }
-            VarType::VarArgs => {
-                panic!("Cannot pass varargs")
-            }
-        }
-    }
-
-    fn asm_push_parameter(&self, param: &Parameter) {
-        match param.var_type {
-            VarType::Int => {
-                todo!()
-            }
-            VarType::Char => {
-                todo!()
-            }
-            VarType::String => {
-                todo!()
-            }
-            VarType::Bool => {
-                todo!()
-            }
-            VarType::Void => {
-                todo!()
-            }
-            VarType::VarArgs => {
-                todo!()
-            }
-        }
-    }
-
-    fn parse(&mut self, pair: Pair<Rule>) {
+    fn parse(&mut self, pair: Pair<Rule>) -> Result<(), Box<dyn std::error::Error>> {
         let rule = pair.as_rule();
-        let value = pair.as_span().as_str().to_string();
         match rule {
-            Rule::extern_function => self.extern_function(pair),
-            Rule::function => self.function(pair),
-            Rule::declaration => {}
-            Rule::EOI => {}
+            Rule::extern_function => self.parse_extern_function(pair),
+            Rule::function => self.parse_function(pair),
+            Rule::declaration => {
+                todo!()
+            }
+            Rule::EOI => Ok(()),
             _ => {
                 todo!("{:?}", pair)
             }
         }
     }
 
-    fn function(&mut self, pair: Pair<Rule>) {
+    fn parse_function(&mut self, pair: Pair<Rule>) -> Result<(), Box<dyn std::error::Error>> {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_span().as_str().to_string();
         let mut parameters = HashMap::new();
@@ -237,16 +98,17 @@ impl Syntax {
         if let Some(block) = Syntax::expect(&inner, Rule::block) {
             inner.next();
             for pair in block.into_inner() {
-                self.statement(pair, &mut function.code);
+                self.parse_statement(pair, &mut function.code)?;
             }
         } else {
-            panic!("No code block for function: {}", name)
+            return Err(format!("No code block for function: {}", name).into());
         }
 
         self.functions.insert(name, function);
+        Ok(())
     }
 
-    fn statement(&mut self, pair: Pair<Rule>, code: &mut Block) {
+    fn parse_statement(&mut self, pair: Pair<Rule>, code: &mut Block) -> Result<(), Box<dyn std::error::Error>> {
         let rule = pair.as_rule();
         if rule != Rule::statement {
             panic!("Expected statement, got: {:?}", rule)
@@ -260,7 +122,7 @@ impl Syntax {
                 let mut arguments = Vec::new();
                 if let Some(args) = Syntax::expect(&inner, Rule::argument_list) {
                     inner.next();
-                    let mut args = args.into_inner();
+                    let args = args.into_inner();
                     for arg in args {
                         let arg = arg.into_inner().next().unwrap();
                         let rule = arg.as_rule();
@@ -269,7 +131,7 @@ impl Syntax {
                                 let arg = arg.into_inner().next().unwrap();
                                 let var_type = VarType::from_rule(&arg.as_rule());
                                 let value = arg.as_span().as_str().to_string();
-                                let mut id: Option<usize> = None;
+                                let id: Option<usize>; // = None;
                                 match var_type {
                                     VarType::Int => {
                                         todo!()
@@ -302,15 +164,15 @@ impl Syntax {
                             }
                             Rule::identifier => {
                                 todo!("{:?}", arg);
-                                let name = arg.as_span().as_str().to_string();
-
-                                let argument = Parameter {
-                                    name,
-                                    value: "".to_string(),
-                                    id: None,
-                                    var_type: VarType::VarArgs,
-                                    is_literal: false,
-                                };
+                                // let name = arg.as_span().as_str().to_string();
+                                //
+                                // let argument = Parameter {
+                                //     name,
+                                //     value: "".to_string(),
+                                //     id: None,
+                                //     var_type: VarType::VarArgs,
+                                //     is_literal: false,
+                                // };
                             }
                             _ => {
                                 panic!("Unknown argument: {:?}", arg);
@@ -324,17 +186,16 @@ impl Syntax {
                 };
                 if self.externs.contains_key(&name) {
                     code.statements.push(Statement::ExternFunctionCall(fn_call));
-                    return;
+                    return Ok(());
                 }
                 if self.functions.contains_key(&name) {
                     code.statements.push(Statement::FunctionCall(fn_call));
-                    return;
+                    return Ok(());
                 }
-                panic!("Unknown function: {}", name);
+                Err(format!("Unknown function: {}", name).into())
             }
             Rule::return_statement => {
-                let mut inner = pair.into_inner();
-                println!("{:?}", inner);
+                todo!()
             }
             _ => {
                 todo!("{:?}", pair)
@@ -342,7 +203,7 @@ impl Syntax {
         }
     }
 
-    fn extern_function(&mut self, pair: Pair<Rule>) {
+    fn parse_extern_function(&mut self, pair: Pair<Rule>) -> Result<(), Box<dyn std::error::Error>> {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_span().as_str().to_string();
         let mut parameters = Vec::new();
@@ -365,9 +226,11 @@ impl Syntax {
             return_type,
         };
         self.externs.insert(name, function);
+
+        Ok(())
     }
 
-    fn expect<'a>(rules: &Pairs<'a, Rule>, rule: Rule) -> Option<Pair<'a, Rule>> {
+    fn expect(rules: &Pairs<'a, Rule>, rule: Rule) -> Option<Pair<'a, Rule>> {
         if let Some(next) = rules.peek() {
             if next.as_rule() == rule {
                 return Some(next);
@@ -376,7 +239,7 @@ impl Syntax {
         None
     }
 
-    pub fn optimize(&mut self) {
+    pub fn optimize(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut remove = Vec::new();
         for func in self.functions.values() {
             if func.code.statements.is_empty() {
@@ -387,6 +250,8 @@ impl Syntax {
         for func in remove {
             self.functions.remove(&func);
         }
+
+        Ok(())
     }
 }
 
@@ -407,8 +272,8 @@ pub struct Variable {
 pub struct Parameter {
     name: String,
     value: String,
-    id: Option<usize>,
-    var_type: VarType,
+    pub(crate) id: Option<usize>,
+    pub(crate) var_type: VarType,
     is_literal: bool,
 }
 
@@ -447,30 +312,30 @@ impl VarType {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    name: String,
+    pub(crate) name: String,
     id: usize,
     parameters: HashMap<String, VarType>,
     return_type: VarType,
-    code: Block,
+    pub(crate) code: Block,
 }
 
 #[derive(Debug, Clone)]
 pub struct Block {
     id: usize,
-    statements: Vec<Statement>,
+    pub(crate) statements: Vec<Statement>,
 }
 
 #[derive(Debug)]
 pub struct ExternFunction {
     name: String,
-    parameters: Vec<VarType>,
+    pub(crate) parameters: Vec<VarType>,
     return_type: VarType,
 }
 
 #[derive(Debug, Clone)]
 pub struct FnCall {
-    name: String,
-    parameters: Vec<Parameter>,
+    pub(crate) name: String,
+    pub(crate) parameters: Vec<Parameter>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,27 +1,26 @@
+mod assembler;
 mod lexer;
 mod syntax;
 
+use crate::assembler::Assembler;
 use crate::lexer::{Lexer, Rule};
 use crate::syntax::Syntax;
 use pest::Parser;
 use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    pest::set_error_detail(false);
     let file_content = fs::read_to_string("assets/helloworld.aoc")?;
-    let parsed = Lexer::parse(Rule::program, &file_content)
-        .unwrap()
-        .next()
-        .unwrap()
-        .into_inner();
 
-    let mut syntax = Syntax::new();
-    syntax.analize(parsed.clone());
-    syntax.optimize();
-    syntax.assemble(parsed);
+    let mut parse_result = Lexer::parse(Rule::program, &file_content).map_err(|e| format!("Failed to parse program: {}", e))?;
 
-    //let mut assembler = Assembler::new(parsed.tokens());
-    //assembler.assemble();
+    let program = parse_result.next().ok_or("No program found in parsed result")?;
+
+    let mut syntax = Syntax::new(program);
+    syntax.analyze()?;
+    syntax.optimize()?;
+
+    let mut assembler = Assembler::new(syntax);
+    assembler.assemble()?;
 
     Ok(())
 }
