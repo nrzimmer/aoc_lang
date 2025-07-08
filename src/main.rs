@@ -20,7 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     syntax.optimize()?;
 
     let mut assembler = Assembler::new(syntax);
-    assembler.assemble()?;
+    let code = assembler.assemble()?;
+
+    println!("{}", code);
 
     Ok(())
 }

@@ -3,35 +3,36 @@ use crate::syntax::{Function, Parameter, Statement, Syntax, VarType};
 
 pub struct Assembler<'a> {
     syntax: Syntax<'a>,
+    asm: Vec<String>,
 }
 
 impl<'a> Assembler<'a> {
     pub fn new(syntax: Syntax<'a>) -> Assembler<'a> {
-        Assembler { syntax }
+        Assembler { syntax, asm: Vec::new() }
     }
 
-    pub fn assemble(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn assemble(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if !self.syntax.functions.contains_key("main") {
             panic!("No main function");
         }
 
-        println!(".text");
-        println!(".section	.rodata");
-        println!(".align 8");
+        self.push_asm(".text");
+        self.push_asm(".section	.rodata");
+        self.push_asm(".align 8");
         for id in 0..self.syntax.strings.len() {
-            let str = &self.syntax.strings[id];
-            println!(".STR{}:", id);
-            println!("  .string {}", str);
+            let str = self.syntax.strings[id].clone();
+            self.push_asm(format!(".STR{}:", id));
+            self.push_asm(format!("  .string {}", str));
         }
-        println!();
+        self.push_asm("");
 
         let mut main = self.syntax.functions.remove("main").unwrap();
-        println!(".text\n.globl main");
+        self.push_asm(".text\n.globl main");
         self.asm_function(&mut main)?;
 
         // Collect all function names first to avoid the borrow checker error
         let function_names: Vec<String> = self.syntax.functions.keys().cloned().collect();
-        println!();
+        self.push_asm("");
 
         // Process each function by name
         for name in function_names {
@@ -40,14 +41,14 @@ impl<'a> Assembler<'a> {
             }
             let f = self.syntax.functions.get(&name).unwrap().clone();
             self.asm_function(&f)?;
-            println!();
+            self.push_asm("");
         }
 
-        Ok(())
+        Ok(self.asm.join("\n"))
     }
 
     fn asm_function(&mut self, function: &Function) -> Result<(), Box<dyn std::error::Error>> {
-        println!("{}:", function.name);
+        self.push_asm(format!("{}:", function.name));
         let add_return = true;
         for stmt in &function.code.statements {
             match stmt {
@@ -56,7 +57,7 @@ impl<'a> Assembler<'a> {
                 }
                 Statement::FunctionCall(call) => {
                     self.asm_pass_parameters(call.parameters.clone())?;
-                    println!("  call {}", call.name);
+                    self.push_asm(format!("  call {}", call.name));
                 }
                 Statement::ExternFunctionCall(call) => {
                     self.asm_pass_parameters(call.parameters.clone())?;
@@ -68,13 +69,12 @@ impl<'a> Assembler<'a> {
                         Push additional float args to stack in reverse order.
                         For now we do not have floating point support, so we set it to 0.
                          */
-                        self.syntax.externs.get(&call.name).map(|f| {
-                            if f.parameters.contains(&VarType::VarArgs) {
-                                println!("  xorl %eax, %eax");
-                            }
-                        });
+                        let f = self.syntax.externs.get(&call.name).unwrap();
+                        if f.parameters.contains(&VarType::VarArgs) {
+                            self.push_asm("  xorl %eax, %eax");
+                        }
                     }
-                    println!("  call {}", call.name);
+                    self.push_asm(format!("  call {}", call.name));
                 }
                 Statement::Return(ret) => {
                     //add_return = false;
@@ -83,30 +83,22 @@ impl<'a> Assembler<'a> {
             }
         }
         if add_return {
-            println!("  xor  %eax, %eax\n  ret")
+            self.push_asm("  xor  %eax, %eax\n  ret")
         }
         Ok(())
     }
 
-    fn asm_pass_parameters(&self, params: Vec<Parameter>) -> Result<(), Box<dyn std::error::Error>> {
+    fn asm_pass_parameters(&mut self, params: Vec<Parameter>) -> Result<(), Box<dyn std::error::Error>> {
         for idx in (0..params.len()).rev() {
             let param = &params[idx];
             if idx > 5 {
                 self.asm_push_parameter(param)?;
             }
             match idx {
-                5 => {
-                    println!("  movl $4, %r9d")
-                }
-                4 => {
-                    println!("  movl $3, %r8d")
-                }
-                3 => {
-                    println!("  movl $2, %ecx")
-                }
-                2 => {
-                    println!("  movl $1, %edx")
-                }
+                5 => self.push_asm("  movl $4, %r9d"),
+                4 => self.push_asm("  movl $3, %r8d"),
+                3 => self.push_asm("  movl $2, %ecx"),
+                2 => self.push_asm("  movl $1, %edx"),
                 1 => {
                     self.asm_pass_param(param, "%esi")?;
                 }
@@ -121,7 +113,7 @@ impl<'a> Assembler<'a> {
         Ok(())
     }
 
-    fn asm_pass_param(&self, param: &Parameter, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn asm_pass_param(&mut self, param: &Parameter, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
         match param.var_type {
             VarType::Int => {
                 todo!()
@@ -130,7 +122,7 @@ impl<'a> Assembler<'a> {
                 todo!()
             }
             VarType::String => {
-                println!("  leaq .STR{}(%rip), {}", param.id.unwrap(), dest);
+                self.push_asm(format!("  leaq .STR{}(%rip), {}", param.id.unwrap(), dest));
             }
             VarType::Bool => {
                 todo!()
@@ -162,5 +154,9 @@ impl<'a> Assembler<'a> {
                 todo!()
             }
         }
+    }
+
+    fn push_asm<T: std::borrow::Borrow<str>>(&mut self, s: T) {
+        self.asm.push(s.borrow().into());
     }
 }
